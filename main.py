@@ -17,6 +17,37 @@ source = '/home/pranav/masters_code/'
 sample = 1000
 
 
+def check_sorted(thelist):
+    """
+    Check if the array is sorted.
+
+    Parameters
+    ----------
+    thelist: List of Numbers
+
+    Returns
+    -------
+    Bool:
+        True if sorted, False if not
+
+    Raises
+    ------
+    None
+
+    See Also
+    --------
+    None
+
+    Notes
+    -----
+    None
+
+    """
+    it = iter(thelist)
+    next(it, None)
+    return all(b >= a for a, b in zip(thelist, it))
+
+
 def DeclRaToIndex(decl, RA):
     """
     Return the corresponding index in the Healpy array.
@@ -42,7 +73,7 @@ def DeclRaToIndex(decl, RA):
     return hp.pixelfunc.ang2pix(NSIDE, np.radians(90. - decl), np.radians(RA))
 
 
-def galaxy_positions(tree=True):
+def galaxy_positions():
     """
     Read Galaxy Positions.
 
@@ -52,14 +83,12 @@ def galaxy_positions(tree=True):
 
     Parameters
     ----------
-    tree: Bool
-            Send it as a cKDTree
+    None
 
     Returns
     -------
-    coords: CKD Tree or List
-            Coordinates of the Galaxies on the Tree format or List
-            format based on whether tree=True or False
+    coords: CKD Tree
+            Coordinates of the Galaxies on the CKDTree format
 
     Raises
     ------
@@ -68,6 +97,11 @@ def galaxy_positions(tree=True):
     See Also
     --------
     read_parameters()
+
+    Notes
+    -----
+    It also sets the global coordinates such as maxdec, mindec, maxra,
+    minra, bsize and SIZE.
 
     """
     hdulist1 = pf.open(source+'/kids_data/KiDS_DR3.1_G9_ugri_shear.fits')
@@ -93,11 +127,8 @@ def galaxy_positions(tree=True):
     global SIZE
     SIZE = len(coords)
     print(maxra, maxdec, minra, mindec, SIZE)
-    if tree:
-        ctree = cKDTree(coords)
-        return ctree
-    else:
-        return coords
+    ctree = cKDTree(coords)
+    return ctree
 
 
 def read_parameters_diff_file(coords):
@@ -229,6 +260,126 @@ def get_index(pos1, pos2, maxdist, bins):
     return int(distance*factor)
 
 
+def find_coorelation_fast(tree, dist, binsize,
+                          parameter1, parameter2, cores=1):
+    """
+    Find the coorelation faster using the query() function.
+
+    Parameters
+    ----------
+    tree: CKDTree
+        Coordinates in the CKDTree format
+    dist: Float
+        Find coorelation of a distance x
+    parameter1, parameter2:
+        Parameters as Numpy arrays
+    cores: int
+        Number of cores to use
+
+    Returns
+    -------
+    Coorelation at a particular point x
+
+    Raises
+    ------
+    ValueError:
+        If the distances from query is not sorted
+
+    See Also
+    --------
+    find_coorelation()
+    find_indices()
+
+    Notes
+    -----
+    None
+
+    """
+    def temp_func(i):
+        ans = 0
+        try:
+            for j in pairs[i]:
+                ans += parameter1[i]*parameter2[j]
+        except TypeError as e:
+            print(e)
+            return 0
+        return ans
+
+    pairs = list(map(lambda point: find_indices(tree, point, dist, binsize),
+                     range(SIZE)))
+    coorel = list(map(temp_func, range(SIZE)))
+    ans = sum(coorel)
+    return ans
+
+
+def find_indices(tree, pointindex, dist, binsize, cores=1):
+    """
+    Find the indices of the tree at a particular distance from a point.
+
+    Parameters
+    ----------
+    tree: CKDTree
+        Coordinates in the CKDTree format
+    dist: Float
+        Find coorelation of a distance x, This will be the midpoint of
+        the bin
+    pointindex: int
+        Index of the point around which you want the neighbours
+    cores: int
+        Number of cores to use
+
+
+    Returns
+    -------
+    Coorelation at a particular point x
+
+    Raises
+    ------
+    ValueError:
+        If the distances from query is not sorted
+    RuntimeWarning:
+        If there is a list of size zero
+
+    See Also
+    --------
+    check_sorted()
+    find_coorelation_fast()
+
+    Notes
+    -----
+    None
+
+    """
+    upper = dist + binsize/2
+    lower = dist - binsize/2
+    nearbypts = cKDTree.query(tree, tree.data[pointindex], k=int(SIZE),
+                              distance_upper_bound=upper, n_jobs=cores)
+    if not check_sorted(nearbypts[0]):
+        raise ValueError
+
+    lowfil = False  # Use this to filter out the values < lower
+
+    # Filtering out the indices
+    for k in range(len(nearbypts[0])):
+        if lower <= nearbypts[0][k]:
+            lowfil = k
+            break
+
+    upfil = SIZE - 1
+    for k in range(len(nearbypts[0])):
+        if SIZE <= nearbypts[1][k] and nearbypts[0][k] == np.inf:
+            upfil = k
+            break
+    if not lowfil or upfil == 0:
+        return None
+
+    indices = nearbypts[1][lowfil:upfil]
+    if indices.size == 0:
+        import warnings
+        warnings.warn("List Size Zero", RuntimeWarning)
+    return indices
+
+
 def manual_real_space_estimator(coords, parameter1, parameter2):
     """
     Do real space estimation by looping over the coordinates.
@@ -262,14 +413,12 @@ def manual_real_space_estimator(coords, parameter1, parameter2):
             index = get_index(coords[k], coords[l], 250, bins)
             ans[index] += parameter1[k]*parameter2[l]
     return ans
-
-
-'''
-nbh = cKDTree.sparse_distance_matrix(ctree,
-                                    ctree,
-                                    max_distance=200)
-# ,output_type='ndarray',p=2)
-'''
+    '''
+    nbh = cKDTree.sparse_distance_matrix(ctree,
+                                        ctree,
+                                        max_distance=200)
+    # ,output_type='ndarray',p=2)
+    '''
 
 
 def find_coorelation(tree, maxdist, parameter1, parameter2):
@@ -347,12 +496,13 @@ def coorelation_function(tree, parameter1, parameter2, binwidth, maxsize):
     """
     coorel = []
     for dist in np.arange(0, maxsize, binwidth):
-        ans = find_coorelation(tree, dist, parameter1, parameter2)
-#        coorel.append(ans)
-        if not len(coorel) == 0:
-            coorel.append(ans - coorel[len(coorel) - 1])
-        else:
+        # ans = find_coorelation(tree, dist, parameter1, parameter2)
+        ans = find_coorelation_fast(tree, dist, binwidth, parameter1,
+                                    parameter2)
+        if len(coorel) == 0:
             coorel.append(ans)
+        else:
+            coorel.append(ans)  # - coorel[len(coorel) - 1])
     return coorel
 
 
@@ -386,20 +536,37 @@ def plot_coorel(coorel, binwidth, maxsize):
     """
     import matplotlib.pyplot as plt
     plt.plot(np.arange(0, maxsize, binwidth), coorel)
-    plt.savefig("plot.png")
+    plt.savefig("plot_fast.png")
     plt.show()
 
 
-binsize = 100
-maxxx = 1.
-binnn = maxxx/binsize
-ctree = galaxy_positions()
-param1, param2 = read_parameters()
-param3 = read_parameters_diff_file(galaxy_positions(False))
-coorel = coorelation_function(ctree, param1, param3, binnn, maxxx)
-print(coorel)
-plot_coorel(coorel, binnn, maxxx)
-
+if __name__ == "__main__":
+    import time
+    binsize = 100
+    maxxx = 1.
+    binnn = maxxx/binsize
+    print("Read galaxies")
+    start = time.time()
+    ctree = galaxy_positions()
+    print(time.time() - start)
+    print(ctree.data)
+    print("Read Parameters")
+    start = time.time()
+    param1, param2 = read_parameters()
+    param3 = read_parameters_diff_file(ctree.data)
+    print(time.time() - start)
+    print("Testing find_coorelation_fast")
+    start = time.time()
+    corel = find_coorelation_fast(ctree, 0.5, 0.1, param1, param3)
+    print(time.time() - start)
+    print(corel)
+    print("Done")
+    print("Calculating the coorel function")
+    start = time.time()
+    coorel = coorelation_function(ctree, param1, param3, binnn, maxxx)
+    print(time.time() - start)
+    print(coorel)
+    plot_coorel(coorel, binnn, maxxx)
 
 # ans = manual_real_space_estimator(coords, param1, param2)
 # plt.plot(ans)
