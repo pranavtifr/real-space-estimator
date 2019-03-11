@@ -163,6 +163,36 @@ def read_parameters_diff_file(coords):
     return params
 
 
+def decompose_shear(coords, gamma1, gamma2):
+    """
+    Decompose the shear to tangential and
+
+    Parameters
+    ----------
+    coords: Numpy array
+        Coordinates of the galaxies
+    gamma1: Shear1
+    gamma2: Shear2
+
+    Returns
+    -------
+    tangential shear as a numpy array
+
+    Raises
+    ------
+    None
+
+    See Also
+    --------
+    None
+
+    Notes
+    -----
+    None
+
+    """
+
+
 def read_parameters():
     """
     Read the Parameters to do the coorelations.
@@ -193,7 +223,8 @@ def read_parameters():
     hdulist1 = pf.open(source+'/kids_data/KiDS_DR3.1_G9_ugri_shear.fits')
     param1 = hdulist1[1].data['e1'][:sample]
     param2 = hdulist1[1].data['e2'][:sample]
-    return param1, param2
+    weights = hdulist1[1].data['weight'][:sample]
+    return param1, param2, weights
 
 
 def random_positions(mini, maxi):
@@ -261,7 +292,7 @@ def get_index(pos1, pos2, maxdist, bins):
 
 
 def find_coorelation_fast(tree, dist, binsize,
-                          parameter1, parameter2, cores=1):
+                          parameter1, parameter2, weights=None, cores=1):
     """
     Find the coorelation faster using the query() function.
 
@@ -273,6 +304,8 @@ def find_coorelation_fast(tree, dist, binsize,
         Find coorelation of a distance x
     parameter1, parameter2:
         Parameters as Numpy arrays
+    weights: Numpy Array
+        weights for the pixel value
     cores: int
         Number of cores to use
 
@@ -295,21 +328,30 @@ def find_coorelation_fast(tree, dist, binsize,
     None
 
     """
+    if weights is None:
+        weights = np.ones(len(parameter2))
+
     def temp_func(i):
         ans = 0
-        try:
-            for j in pairs[i]:
-                ans += parameter1[i]*parameter2[j]
-        except TypeError as e:
-            print(e)
-            return 0
+        if pairs[i] is None:
+            return ans
+        for j in pairs[i]:
+            ans += parameter1[i]*parameter2[j]*weights[j]
         return ans
 
     pairs = list(map(lambda point: find_indices(tree, point, dist, binsize),
                      range(SIZE)))
     coorel = list(map(temp_func, range(SIZE)))
+    suum = 0
+    for i in range(len(pairs)):
+        if pairs[i] is None:
+            continue
+        for j in range(len(pairs[i])):
+            suum += weights[j]
+    if suum == 0:
+        suum = 1
     ans = sum(coorel)
-    return ans
+    return ans/suum
 
 
 def find_indices(tree, pointindex, dist, binsize, cores=1):
@@ -552,12 +594,13 @@ if __name__ == "__main__":
     print(ctree.data)
     print("Read Parameters")
     start = time.time()
-    param1, param2 = read_parameters()
+    param1, param2, weights = read_parameters()
     param3 = read_parameters_diff_file(ctree.data)
     print(time.time() - start)
     print("Testing find_coorelation_fast")
     start = time.time()
-    corel = find_coorelation_fast(ctree, 0.5, 0.1, param1, param3)
+    corel = find_coorelation_fast(ctree, 0.5, 0.1, param1, param3,
+                                  weights=weights)
     print(time.time() - start)
     print(corel)
     print("Done")
