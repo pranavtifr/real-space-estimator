@@ -13,7 +13,7 @@ maxdec = 0
 mindec = 0
 bsize = abs(max(maxra, maxdec) - min(mindec, minra))
 NSIDE = 2048
-source = '/user1/pranav/msc_codes/'
+source = '/home/pranav/masters_code/'
 sample = 10000
 
 
@@ -44,25 +44,25 @@ def get_rcs():
     None
 
     """
-    kk = np.loadtxt("rcslens.csv", delimiter=",",
-                    usecols=(1, 2, 3, 4, 5), skiprows=1)
+    kk = np.loadtxt(source+"/kids_data/rcslens.csv", delimiter=",",
+                    usecols=(1, 2, 3, 4, 5), skiprows=1, max_rows=sample)
     global maxra
-    maxra = max(kk[:, 0])
+    maxra = max(kk[:sample, 0])
     global minra
-    minra = min(kk[:, 0])
+    minra = min(kk[:sample, 0])
     global maxdec
-    maxdec = max(kk[:, 1])
+    maxdec = max(kk[:sample, 1])
     global mindec
-    mindec = min(kk[:, 1])
+    mindec = min(kk[:sample, 1])
     global bsize
     bsize = abs(max(maxra, maxdec) - min(mindec, minra))
-    coords = np.column_stack([kk[:, 0], kk[:, 1]])
+    coords = np.column_stack([kk[:sample, 0], kk[:sample, 1]])
     global SIZE
     SIZE = len(coords)
     print(maxra, maxdec, minra, mindec, SIZE)
     ctree = cKDTree(coords)
     # gamma_shear = -k[:,2]*np.cos
-    return ctree, kk[:, 2]
+    return ctree, kk[:sample, 2]
 
 
 def check_sorted(thelist):
@@ -625,7 +625,7 @@ def plot_coorel(coorel, binwidth, maxsize):
     """
     import matplotlib.pyplot as plt
     plt.plot(np.arange(0, maxsize, binwidth), coorel)
-    plt.savefig("plot_fast.png")
+    plt.savefig("plot_fast_rcs.png")
     plt.show()
 
 
@@ -658,7 +658,7 @@ if __name__ == "__main__":
     print(time.time() - start)
     np.savetxt("coorel_kids.csv", coorel)
     print(coorel)
-    # plot_coorel(coorel, binnn, maxxx)
+    plot_coorel(coorel, binnn, maxxx)
 
 # ans = manual_real_space_estimator(coords, param1, param2)
 # plt.plot(ans)
