@@ -13,9 +13,29 @@ maxdec = 0
 mindec = 0
 bsize = abs(max(maxra, maxdec) - min(mindec, minra))
 NSIDE = 2048
-source = '/home/pranav/masters_code/'
-sample = 1000
+source = '/user1/pranav/msc_codes/'
 
+
+def get_rcs():
+    kk = np.loadtxt("rcslens.csv", delimiter=","
+                , usecols=(1,2,3,4,5), skiprows=1)
+    global maxra
+    maxra = max(kk[:,0])
+    global minra
+    minra = min(kk[:,0])
+    global maxdec
+    maxdec = max(kk[:,1])
+    global mindec
+    mindec = min(kk[:,1])
+    global bsize
+    bsize = abs(max(maxra, maxdec) - min(mindec, minra))
+    coords = np.column_stack([kk[:,0], kk[:,1]])
+    global SIZE
+    SIZE = len(coords)
+    print(maxra, maxdec, minra, mindec, SIZE)
+    ctree = cKDTree(coords)
+    # gamma_shear = -k[:,2]*np.cos
+    return ctree, kk[:,2]
 
 def check_sorted(thelist):
     """
@@ -111,8 +131,8 @@ def galaxy_positions():
     hdulist4 = pf.open('../kids_data/KiDS_DR3.1_G23_ugri_shear.fits')
     hdulist5 = pf.open('../kids_data/KiDS_DR3.1_GS_ugri_shear.fits')
     '''
-    ra = hdulist1[1].data['RAJ2000'][:sample]
-    dec = hdulist1[1].data['DECJ2000'][:sample]
+    ra = hdulist1[1].data['RAJ2000']
+    dec = hdulist1[1].data['DECJ2000']
     global maxra
     maxra = max(ra)
     global minra
@@ -189,10 +209,9 @@ def read_parameters():
     galaxy_positions()
 
     """
-    source = '/home/pranav/masters_code/'
     hdulist1 = pf.open(source+'/kids_data/KiDS_DR3.1_G9_ugri_shear.fits')
-    param1 = hdulist1[1].data['e1'][:sample]
-    param2 = hdulist1[1].data['e2'][:sample]
+    param1 = hdulist1[1].data['e1']
+    param2 = hdulist1[1].data['e2']
     return param1, param2
 
 
@@ -547,12 +566,13 @@ if __name__ == "__main__":
     binnn = maxxx/binsize
     print("Read galaxies")
     start = time.time()
-    ctree = galaxy_positions()
+    #ctree = galaxy_positions()
+    ctree, param1 = get_rcs()
     print(time.time() - start)
     print(ctree.data)
     print("Read Parameters")
     start = time.time()
-    param1, param2 = read_parameters()
+    #param1, param2 = read_parameters()
     param3 = read_parameters_diff_file(ctree.data)
     print(time.time() - start)
     print("Testing find_coorelation_fast")
@@ -565,8 +585,9 @@ if __name__ == "__main__":
     start = time.time()
     coorel = coorelation_function(ctree, param1, param3, binnn, maxxx)
     print(time.time() - start)
+    np.savetxt("coorel_kids.csv", coorel)
     print(coorel)
-    plot_coorel(coorel, binnn, maxxx)
+    # plot_coorel(coorel, binnn, maxxx)
 
 # ans = manual_real_space_estimator(coords, param1, param2)
 # plt.plot(ans)
