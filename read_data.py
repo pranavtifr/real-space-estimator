@@ -3,8 +3,8 @@ import healpy as hp
 import numpy as np
 from scipy.spatial import cKDTree
 NSIDE = 2048
-sample = 1000000000
-source = '/user1/pranav/msc_codes/'
+sample = 10000
+source = '/home/pranav/masters_code/'
 SIZE = 0
 maxra = 0
 minra = 0
@@ -39,7 +39,7 @@ def get_rcs():
 
     """
     kk = np.loadtxt(source+"/kids_data/rcslens.csv", delimiter=",",
-                    usecols=(1, 2, 3, 4, 5), skiprows=1)
+                    usecols=(1, 2, 3, 4, 5), skiprows=1, max_rows=sample)
     global maxra
     maxra = max(kk[:sample, 0])
     global minra

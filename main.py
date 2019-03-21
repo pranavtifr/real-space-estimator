@@ -4,7 +4,7 @@ import numpy as np
 from read_data import check_sorted, get_rcs, read_parameters_diff_file
 from scipy.spatial import cKDTree
 mindec = 0
-BATCHSIZE = 100
+BATCHSIZE = 1000
 
 
 def find_coorelation_fast(tree, maxdist, binsize,
@@ -51,13 +51,19 @@ def find_coorelation_fast(tree, maxdist, binsize,
     def temp_func(pair):
         import itertools
         ans = 0
-        if pair is None:
+        if len(pair) == 0 or pair is None:
             return ans
         for i, j in itertools.combinations_with_replacement(pair, 2):
             ans += parameter1[i]*parameter2[j]*weights[j]
-        print(pair)
         return ans/sum(weights[pair])
 
+    def corel_point(pairs):
+        ans = np.zeros(len(np.arange(0, maxdist, binsize))-1)
+        tempans = []
+        for pair in pairs:
+            tempans.append(temp_func(pair))  # Try to parallelize this step
+        ans = ans + np.array(tempans)
+        return ans
     itersize = 0
     batchstart = 0
     if not batchnumber:
@@ -68,17 +74,18 @@ def find_coorelation_fast(tree, maxdist, binsize,
         itersize = BATCHSIZE
         batchstart = itersize*(batchnumber-1)
         batchend = itersize*(batchnumber)
-    ans = np.zeros(len(np.arange(0, maxdist, binsize)))
-    for point in range(batchstart, batchend, 1):
-        pairs = find_indices_bin(tree, point, maxdist, binsize)
-        tempans = []
-        for pair in pairs:
-            tempans.append(temp_func(pair))
-        ans = ans + np.array(tempans)
-    return ans
+    allpairs = find_indices_bin(tree, batchstart, batchend, maxdist, binsize)
+    print(len(allpairs))
+    print("Finding Coorelations")
+    start = time.time()
+    # param1, param2, weights = read_parameters()
+    final_ans = list(map(corel_point, allpairs))
+    print("Time taken to find coorelations", time.time() - start)
+    print(final_ans)
+    return np.sum(np.array(final_ans), axis=0)
 
 
-def find_indices_bin(tree, pointindex, maxdist, binsize, cores=1):
+def find_indices_bin(tree, batchstart, batchend, maxdist, binsize, cores=1):
     """
     Find the indices of the tree at a particular distance from a point.
 
@@ -89,8 +96,10 @@ def find_indices_bin(tree, pointindex, maxdist, binsize, cores=1):
     dist: Float
         Find coorelation of a distance x, This will be the midpoint of
         the bin
-    pointindex: int
-        Index of the point around which you want the neighbours
+    batchstart: Int
+        starting index of the points of which you want the neighbours
+    batchend: Int
+        ending index of the points of which you want the neighbours
     cores: int
         Number of cores to use
 
@@ -116,25 +125,31 @@ def find_indices_bin(tree, pointindex, maxdist, binsize, cores=1):
     None
 
     """
-    print("Pointindex", pointindex)
-    print("Value at pointindex", tree.data[pointindex])
-    print("SIZE", SIZE)
-    nearbypts = cKDTree.query(tree, tree.data[pointindex], k=int(SIZE),
-                              distance_upper_bound=maxdist, n_jobs=cores)
-    if not check_sorted(nearbypts[0]):
-        raise ValueError
+    batchdata = tree.data[batchstart:batchend]
+    dist, nearbypts = cKDTree.query(tree, batchdata,
+                                    k=int(SIZE),
+                                    distance_upper_bound=maxdist, n_jobs=cores)
+    print("Batch data queried")
 
-    bins = np.arange(0, maxdist, binsize)
-    indices = []
-    for ll in range(len(bins)-1):
-        tempindices = []
-        for kk in range(len(nearbypts[0])):
-            if nearbypts[0][kk] > bins[ll] and nearbypts[0][kk] < bins[ll+1]:
-                tempindices.append(nearbypts[1][kk])
-        print("Tempindices", tempindices)
-        indices.append(set(tempindices))
-    print("Indices", indices)
-    return indices
+    def point_indices(blah):  # Try to parallize this loop too
+        if not check_sorted(dist[blah]):
+            raise ValueError
+
+        bins = np.arange(0, maxdist, binsize)
+        indices = []
+        for ll in range(len(bins)-1):
+            tempindices = []
+            for kk in range(len(dist[blah])):
+                if dist[blah][kk] > bins[ll] and dist[blah][kk] < bins[ll+1]:
+                    tempindices.append(nearbypts[blah][kk])
+            indices.append(tempindices)
+        return indices
+    print("Finding Indices")
+    start = time.time()
+    # param1, param2, weights = read_parameters()
+    allindices = list(map(point_indices, range(len(batchdata))))
+    print("Time taken to find indices", time.time() - start)
+    return allindices  # The binned pair for every point
 
 
 def find_indices(tree, pointindex, dist, binsize, cores=-1):
@@ -289,8 +304,11 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("-N", "--number", help="Batch Number", type=int)
+    parser.add_argument("-T", "--threads", help="Number of parallel threads",
+                        type=int, default=1)
     args = parser.parse_args()
     BATCHNUMBER = args.number
+    THREADS = args.threads
     import time
     binsize = 100
     maxxx = 3.
@@ -309,9 +327,11 @@ if __name__ == "__main__":
     print("Testing find_coorelation_fast")
     start = time.time()
     from read_data import SIZE
-    corel = find_coorelation_fast(ctree, 5, 0.1, param1, param3,
-                                  weights=weights,
-                                  cores=1, batchnumber=BATCHNUMBER)
+    print("SIZE", SIZE)
+    # from concurrent.futures import ProcessPoolExecutor
+    # with ProcessPoolExecutor(max_workers=THREADS) as p:
+    corel = find_coorelation_fast(ctree, 1, 0.1, param1, param3,
+                                  cores=THREADS, batchnumber=BATCHNUMBER)
     print("time taken to compute coorelation function", time.time() - start)
     print(corel)
     print("Done")
