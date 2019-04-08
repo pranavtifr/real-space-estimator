@@ -1,7 +1,8 @@
 #! /usr/bin/env python
 """Compute and Plot Coorelation Functions from FITS file."""
 import numpy as np
-from read_data import check_sorted, get_rcs, read_parameters_diff_file
+from read_data import check_sorted, read_parameters_diff_file
+from read_data2 import make_healpix_coord_tree, make_map, make_finaldata
 from scipy.spatial import cKDTree
 mindec = 0
 BATCHSIZE = 1000
@@ -311,12 +312,14 @@ if __name__ == "__main__":
     THREADS = args.threads
     import time
     binsize = 100
-    maxxx = 3.
+    maxxx = 30.
     binnn = maxxx/binsize
     print("Read galaxies")
     start = time.time()
     # ctree = galaxy_positions()
-    ctree, param1, param2, weights = get_rcs()
+    param1, param2, weights, shearcalibmap = make_map(make_finaldata())
+    ctree = make_healpix_coord_tree()
+
     print("Time taken to read galaxies", time.time() - start)
     print(ctree.data)
     print("Read Parameters")
@@ -330,7 +333,8 @@ if __name__ == "__main__":
     print("SIZE", SIZE)
     # from concurrent.futures import ProcessPoolExecutor
     # with ProcessPoolExecutor(max_workers=THREADS) as p:
-    corel = find_coorelation_fast(ctree, 1, 0.1, param1, param3,
+    BATCHSIZE = len(ctree.data)
+    corel = find_coorelation_fast(ctree, maxxx, binnn, param1, param3,
                                   cores=THREADS, batchnumber=BATCHNUMBER)
     print("time taken to compute coorelation function", time.time() - start)
     print(corel)
@@ -341,7 +345,7 @@ if __name__ == "__main__":
     # print(time.time() - start)
     np.savetxt("coorel_rcs_"+str(BATCHNUMBER)+".csv", corel)
     print(corel)
-    # plot_coorel(coorel, binnn, maxxx)
+    plot_coorel(corel, binnn, maxxx)
 
 # ans = manual_real_space_estimator(coords, param1, param2)
 # plt.plot(ans)

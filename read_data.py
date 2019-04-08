@@ -1,15 +1,18 @@
+#! /usr/bin/env python
+"""Import data and convert to healpix map."""
 import astropy.io.fits as pf
 import healpy as hp
 import numpy as np
 from scipy.spatial import cKDTree
 NSIDE = 2048
-sample = 10000
+sample = 10000000
 source = '/home/pranav/masters_code/'
 SIZE = 0
 maxra = 0
 minra = 0
 maxdec = 0
 mindec = 0
+
 
 def get_rcs():
     """
@@ -38,8 +41,8 @@ def get_rcs():
     None
 
     """
-    kk = np.loadtxt(source+"/kids_data/rcslens.csv", delimiter=",",
-                    usecols=(1, 2, 3, 4, 5), skiprows=1, max_rows=sample)
+    kk = np.loadtxt(source+"/kids_data/rcslens2.csv", delimiter=",",
+                    skiprows=1, max_rows=sample)
     global maxra
     maxra = max(kk[:sample, 0])
     global minra
@@ -56,7 +59,8 @@ def get_rcs():
     print(maxra, maxdec, minra, mindec, SIZE)
     ctree = cKDTree(coords)
     # gamma_shear = -k[:,2]*np.cos
-    return ctree, kk[:sample, 2], kk[:sample, 3], kk[:sample, 4]
+    return ctree, kk[:sample, 2], kk[:sample,
+                                     3], kk[:sample, 4], kk[:sample, 5]
 
 
 def check_sorted(thelist):
@@ -90,7 +94,7 @@ def check_sorted(thelist):
     return all(b >= a for a, b in zip(thelist, it))
 
 
-def DeclRaToIndex(decl, RA):
+def declratoindex(decl, ra, nside=NSIDE):
     """
     Return the corresponding index in the Healpy array.
 
@@ -112,7 +116,7 @@ def DeclRaToIndex(decl, RA):
     None
 
     """
-    return hp.pixelfunc.ang2pix(NSIDE, np.radians(90. - decl), np.radians(RA))
+    return hp.pixelfunc.ang2pix(nside, np.radians(90. - decl), np.radians(ra))
 
 
 def galaxy_positions():
@@ -200,7 +204,7 @@ def read_parameters_diff_file(coords):
     params = []
     for point in coords:
         ra, dec = point
-        index = DeclRaToIndex(dec, ra)
+        index = declratoindex(dec, ra)
         params.append(param_map[index])
     return params
 
